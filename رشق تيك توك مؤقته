@@ -1,1 +1,413 @@
-mm_kkx
+#include "Files/Helper/Includes.h"
+#include "Main/Main.h"
+#include "Main/ESP/Draw.cpp"
+#include "Main/Skin/SkinMain.h"
+#include "Main/SaveCFG.h"
+#include "Menu.h"
+#include "Main/ESP/Font.h"
+
+void قيمهD(uintptr_t addr,int var){Tools::WriteAddr(reinterpret_cast<void*>(addr),reinterpret_cast<void*>(&var),4); }
+
+android_app *g_App = 0;
+
+EGLBoolean(*orig_eglSwapBuffers)(EGLDisplay dpy, EGLSurface surface);
+EGLBoolean _eglSwapBuffers(EGLDisplay dpy, EGLSurface surface) {
+    eglQuerySurface(dpy, surface, EGL_WIDTH, &glWidth);
+    eglQuerySurface(dpy, surface, EGL_HEIGHT, &glHeight);
+
+    if (glWidth <= 0 || glHeight <= 0)
+        return orig_eglSwapBuffers(dpy, surface);
+
+    if (!Data::Cheat::App)
+        return orig_eglSwapBuffers(dpy, surface);
+
+    if (!initImGui) {
+        screenWidth = ANativeWindow_getWidth(Data::Cheat::App->window);
+        screenHeight = ANativeWindow_getHeight(Data::Cheat::App->window);
+        density = AConfiguration_getDensity(Data::Cheat::App->config);
+
+        ImGui::CreateContext();
+        Theme();
+        ImGui_ImplAndroid_Init();
+        ImGui_ImplOpenGL3_Init("#version 300 es");
+
+        ImGuiIO& io = ImGui::GetIO();
+        io.ConfigWindowsMoveFromTitleBarOnly = true;
+        io.IniFilename = NULL;
+
+        static const ImWchar icons_ranges[] = { ICON_MIN_FA, ICON_MAX_FA, 0 };
+        ImFontConfig icons_config;
+        icons_config.MergeMode = true;
+        icons_config.PixelSnapH = true;
+        icons_config.OversampleH = 2.5;
+        icons_config.OversampleV = 2.5;
+
+        static const ImWchar range[] = { 0x0020, static_cast<ImWchar>(0x10FFFF), 0 };
+        io.Fonts->AddFontFromMemoryTTF(LiteFont_char, sizeof(LiteFont_char), 15, 0, io.Fonts->GetGlyphRangesVietnamese( ));
+        io.Fonts->AddFontFromMemoryTTF((void *)font_awesome_6, sizeof(font_awesome_6), 15.0f, &icons_config, icons_ranges);
+
+        pRegularFont = io.Fonts->AddFontFromMemoryTTF(LiteFont_char, sizeof(LiteFont_char), 12, 0, io.Fonts->GetGlyphRangesVietnamese( ));
+        Icon = io.Fonts->AddFontFromMemoryTTF((void *)font_awesome_6, sizeof(font_awesome_6), 15.0f, &icons_config, icons_ranges);
+		
+        memset(&Config, 0, sizeof(sConfig));
+        Config.IpadS = 100.0f;
+        Config.Ragebot.Smooth = 1.0f;
+                Config.Line = 1.7f;
+        Config.IpadC = 3.3f;
+        Config.IpadS = 3.7f;
+        Config.Memory.MagicValue = 300.0f;
+        Config.Memory.MagicX = 120.0f;
+        Config.Memory.MagicY = 180.0f;
+        Config.Memory.MagicZ = 300.0f;
+        User = CreateTexture(user, sizeof(user));
+        Logo = CreateTexture(goku_data, sizeof(goku_data));
+
+        initImGui = true;
+    }
+
+    ImGuiIO& io = ImGui::GetIO();
+    ImGui_ImplOpenGL3_NewFrame();
+    io.MouseDrawCursor = true;
+    ImGui_ImplAndroid_NewFrame(glWidth, glHeight);
+    ImGui::NewFrame();
+
+    ImGui::RenderNotifications();
+    DrawESP(ImGui::GetBackgroundDrawList());
+    DrawMenu();
+
+    ImGui::End();
+    ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+    return orig_eglSwapBuffers(dpy, surface);
+    
+          }
+
+
+// تعريف الدالة الأصلية
+int (*original_AInputQueue_getEvent)(AInputQueue*, AInputEvent**);
+int hooked_AInputQueue_getEvent(AInputQueue* queue, AInputEvent** event) {
+    int result = original_AInputQueue_getEvent(queue, event);
+
+    if (result >= 0 && *event) {// JOIN ~> @RIYAZSRC
+        int32_t type = AInputEvent_getType(*event);
+
+        if (type == AINPUT_EVENT_TYPE_MOTION) {
+            int32_t action = AMotionEvent_getAction(*event) & AMOTION_EVENT_ACTION_MASK;
+            int32_t pointerIndex = (AMotionEvent_getAction(*event) & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) 
+                                   >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT;
+
+            // Get raw touch coordinates
+            float rawX = AMotionEvent_getX(*event, pointerIndex);
+            float rawY = AMotionEvent_getY(*event, pointerIndex);
+
+            // Map touch coordinates to ImGui's coordinate system
+            float scaledX = (rawX * glWidth) / screenWidth;
+            float scaledY = (rawY * glHeight) / screenHeight;
+
+            ImGuiIO& io = ImGui::GetIO();
+
+            switch (action) {// JOIN ~> @RIYAZSRC
+                case AMOTION_EVENT_ACTION_DOWN:
+                case AMOTION_EVENT_ACTION_POINTER_DOWN:
+                    io.MousePos = ImVec2(scaledX, scaledY);  // Map touch to ImGui coordinates
+                    io.MouseDown[0] = true;
+                    break;
+
+                case AMOTION_EVENT_ACTION_UP:
+                case AMOTION_EVENT_ACTION_POINTER_UP:
+                    io.MousePos = ImVec2(scaledX, scaledY);  // Map touch to ImGui coordinates
+                    io.MouseDown[0] = false;
+                    break;
+
+                case AMOTION_EVENT_ACTION_MOVE:
+                    io.MousePos = ImVec2(scaledX, scaledY);  // Update the mouse position
+                    break;
+
+                default:
+                    break;
+            }// JOIN ~> @RIYAZSRC
+
+        }
+    }
+
+    return result;
+}
+int64_t __fastcall (*orig_onInputEvent)(struct android_app *app, AInputEvent *inputEvent);
+int64_t __fastcall onInputEvent(struct android_app *app, AInputEvent *inputEvent) {
+    if (initImGui)
+    {    if (OpenVolume) {
+        if (AKeyEvent_getAction(inputEvent) == AKEY_EVENT_ACTION_DOWN)
+        {
+            int32_t key_val = AKeyEvent_getKeyCode(inputEvent);
+            if (key_val == AKEYCODE_VOLUME_UP)
+            {
+                VR = !VR;
+                return 0;
+            }
+        }
+  }
+        ImGui_ImplAndroid_HandleInputEvent(inputEvent, {(float)screenWidth / (float)glWidth, (float)screenHeight / (float)glHeight});
+    }
+  if (OpenVolume)
+    return VR ? 0 : orig_onInputEvent(app, inputEvent);
+  else
+    return orig_onInputEvent(app, inputEvent);
+}
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+bool isVPN() {
+    const char* command = "/sbin/ifconfig";
+    FILE* fp = popen(command, "r");
+    if (!fp) {
+        perror("Failed to execute command");
+        return false;
+    }
+
+    char line[1024];
+    bool vpnDetected = false;
+    while (fgets(line, sizeof(line), fp)) {
+        if (strstr(line, "tun") || strstr(line, "ppp")) {
+            vpnDetected = true;
+            break;
+        }
+    }
+
+    pclose(fp);
+    return vpnDetected;
+}
+
+bool logged = false;
+
+void *login_thread(void *) {
+    while (!isLibraryLoaded(("libUE4.so"))){
+        sleep(1);
+    }
+     sleep(10);
+    static char s[64];
+    auto key = getClipboardText();
+    strncpy(s, key.c_str(), sizeof s);
+    return NULL;
+}
+
+
+#include <list>
+#include <vector>
+#include <string.h>
+#include <pthread.h>
+#include <thread>
+#include <cstring>
+#include <jni.h>
+#include <unistd.h>
+#include <fstream>
+#include <iostream>
+#include <dlfcn.h>
+#include "Includes/Logger.h"
+#include "Includes/Utils.h"
+//Target lib here
+#define targetLibName OBFUSCATE("libanogs.so")
+
+#include "Includes/Macros.h"
+//------------HOOKSتعريف
+
+#define VIP_R(RET, NAME, ARGS) \
+  RET(*o##NAME) ARGS; \
+  RET h##NAME ARGS
+
+__int64 __fastcall hooked_404D50(
+__int64 a1, __int64 a2, __int64 a3, __int64 a4, __int64 a5,
+__int64 a6, __int64 a7, __int64 a8, double a9, double a10,
+double a11, double a12, double a13, double a14, double a15,
+double a16, __int64 a17, __int64 a18, __int64 a19, double a20,
+double a21, double a22, __int64 a23, __int64 a24, __int64 a25,
+__int64 a26, __int64 a27, __int64 a28, __int64 a29, __int64 a30,
+__int64 a31, __int64 a32, __int64 a33, __int64 a34, __int64 a35,
+__int64 a36, __int64 a37, __int64 a38, __int64 a39, __int64 a40,
+__int64 a41, __int64 a42, __int64 a43, __int64 a44, __int64 a45,
+__int64 a46, __int64 a47)
+{
+srand(time(NULL));
+usleep(rand() % 500);
+volatile double dummy = a9 * 0.5 + a10 - a11 + a12 * 0.25 - a13 + a14 - a15 + a16;
+dummy = dummy * 0.0;
+volatile __int64 temp = a1 ^ a2;
+temp = (temp >> 3) ^ (temp << 5);
+return 0;
+}
+VIP_R(__int64, sub_6D6F35C, (__int64 comp, __int64 a2, __int64 a3, __int64 a4, __int64 a5, __int64 a6, __int64 a7, __int64 a8)) {
+*(bool*)(comp + 0x1E4) = false;  //bEnableTssSdkAntiData
+return osub_6D6F35C(comp, a2, a3, a4, a5, a6, a7, a8);
+}//DIE
+
+void * hack_thread(void *) {
+    LOGI(OBFUSCATE("RISING STARS LIBRARY READY...."));
+
+    do {
+        sleep(1);
+    } while (!isLibraryLoaded(targetLibName));
+
+
+
+PATCH_LIB("libanogs.so", "0x12BB20", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x1A5C14", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x1D551C", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x1D5A88", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x1D624C", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x1D6598", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x1D6EA8", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x1D7398", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x213000", "C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x2132E4", "C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x229134", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x238B7C", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x23ED70", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x23EFEC", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x25E918", "C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x25EC38", "1F 20 03 D5");
+PATCH_LIB("libanogs.so", "0x25EC48", "1F 20 03 D5");
+PATCH_LIB("libanogs.so", "0x25EC4C", "1F 20 03 D5");
+PATCH_LIB("libanogs.so", "0x25EC50", "1F 20 03 D5");
+PATCH_LIB("libanogs.so", "0x25EC54", "1F 20 03 D5");
+PATCH_LIB("libanogs.so", "0x26ADD8", "1F 20 03 D5");
+PATCH_LIB("libanogs.so", "0x26ADE4", "1F 20 03 D5");
+PATCH_LIB("libanogs.so", "0x2771C8", "1F 20 03 D5");
+PATCH_LIB("libanogs.so", "0x2771D4", "1F 20 03 D5");
+PATCH_LIB("libanogs.so", "0x28C584", "1F 20 03 D5");
+PATCH_LIB("libanogs.so", "0x28C590", "1F 20 03 D5");
+PATCH_LIB("libanogs.so", "0x29C370", "1F 20 03 D5");
+PATCH_LIB("libanogs.so", "0x29C588", "1F 20 03 D5");
+PATCH_LIB("libanogs.so", "0x29D06C", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x2D28F8", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x304770", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x31DCB0", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x32165C", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x32F1B4", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x32F334", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x330494", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x373064", "1F 20 03 D5");
+PATCH_LIB("libanogs.so", "0x375F54", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x37C904", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x37F820", "AA 1F 03 E0");
+PATCH_LIB("libanogs.so", "0x37F828", "AA 1F 03 E0");
+PATCH_LIB("libanogs.so", "0x37F830", "1F 20 03 D5");
+PATCH_LIB("libanogs.so", "0x37F84C", "1F 20 03 D5");
+PATCH_LIB("libanogs.so", "0x39F56C", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x404D50", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x425864", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x43694C", "C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x446738", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x44AB20", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x461F04", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x46270C", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x4633F4", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x465790", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x46ED30", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x471B68", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x47B5CC", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x49A624", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x49AA00", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x4B3548", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x4B3560", "1F 20 03 D5");
+PATCH_LIB("libanogs.so", "0x4D4C94", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x4DFB40", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x4E0B5C", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x51ADD0", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libanogs.so", "0x51D1F4", "01 00 00 14");
+PATCH_LIB("libanogs.so", "0x51FB10", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libUE4.so", "0x6AF009C", "C0 00 80 52 C0 03 5F D6");
+PATCH_LIB("libUE4.so", "0x6AF0378", "00 0F 80 D2 C0 03 5F D6");
+PATCH_LIB("libUE4.so", "0x7382160", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libUE4.so", "0x75B77D4", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libUE4.so", "0x75BA904", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libUE4.so", "0x75BF140", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libUE4.so", "0x76C3BF0", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libUE4.so", "0x76C64BC", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libUE4.so", "0x820C064", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libUE4.so", "0x820C624", "00 00 80 D2 C0 03 5F D6");
+PATCH_LIB("libUE4.so", "0xCC08CF4", "00 00 80 D2 C0 03 5F D6");
+
+
+
+
+    return NULL;
+}
+
+
+__attribute__((constructor))
+void lib_main() {
+    // Create a new thread so it does not block the main thread, means the game would not freeze
+    pthread_t ptid;
+    pthread_create(&ptid, NULL, hack_thread, NULL);
+}
+	
+	
+
+
+
+
+//======================================================================================//
+#include "problem.h"
+void* main_thread(void*) {
+    Data::Cheat::UE4 = Tools::GetBaseAddress("libUE4.so");
+    while (!Data::Cheat::UE4)
+    {
+        Data::Cheat::UE4 = Tools::GetBaseAddress("libUE4.so");
+        sleep(1);
+        
+    }
+    while (!Data::Cheat::App)
+    {
+        Data::Cheat::App = *(android_app**)(Data::Cheat::UE4 + Data::Offset::GNativeAndroidApp_Offset);
+        sleep(1);
+    }
+    FName::GNames = GetGNames();
+    while (!FName::GNames) {
+        FName::GNames = GetGNames();
+        sleep(1);
+    }
+    UObject::GUObjectArray = (FUObjectArray*)(Data::Cheat::UE4 + Data::Offset::GUObject_Offset);
+    
+    
+    PATCH_LIB("libanogs.so", "0x4D1E94", "00 00 80 D2 C0 03 5F D6"); // يمنع إرسال تقرير اللاعب
+    PATCH_LIB("libanogs.so", "0x4FFD08", "00 00 80 D2 C0 03 5F D6"); // يمنع الكشف + الحماية
+    PATCH_LIB("libUE4.so","0x71D5E1C","C0 03 5F D6");//حل باند سكنات 64بت
+    PATCH_LIB("libUE4.so","0x8213BA0","C0 03 5F D6");// حل باند سكنات 4.6
+    PATCH_LIB("libUE4.so", "0x627D744", "00 00 80 D2 C0 03 5F D6"); // حل باند شبكة 
+    PATCH_LIB("libUE4.so", "0x627E9DC", "00 00 80 D2 C0 03 5F D6"); // حل باند شبكة 
+    PATCH_LIB("libanogs.so", "0x9FAC0", "00 00 80 D2 C0 03 5F D6");//حل باند يوم 
+    PATCH_LIB("libanogs.so", "0x9F730", "00 00 80 D2 C0 03 5F D6");//حل باند يوم 
+    PATCH_LIB("libTDataMaster.so", "0x3570", "00 00 80 D2 C0 03 5F D6");   // حل مراقبه 
+    PATCH_LIB("libTDataMaster.so", "0x2D60", "00 00 80 D2 C0 03 5F D6");   // حل مراقبه 
+    PATCH_LIB("libTDataMaster.so", "0x2D4240", "00 00 80 D2 C0 03 5F D6");   // حل مراقبه 
+    //حلول الباندات 64
+   MemoryPatch::createWithHex("libUE4.so", 0x4D2AB92, "0C 1D 20 93").Modify();
+   MemoryPatch::createWithHex("libUE4.so", 0x4D2AB96, "04 9E 06 9D").Modify();
+   MemoryPatch::createWithHex("libUE4.so", 0x4D2AB9A, "08 00 00 00").Modify();
+   MemoryPatch::createWithHex("libUE4.so", 0x4D2AB9E, "00 00 24 00").Modify(); 
+    
+    
+	DobbyHook((void*)(Data::Cheat::App->onInputEvent),(void*)onInputEvent,(void**)&orig_onInputEvent);
+    PostrenderDraw();
+	DobbyHook((void *)(Data::Cheat::UE4 + Data::Offset::Process_Event_Offset), (void *)hkProcessEvent, (void **)&oProcessEvent);
+	auto pageSize = sysconf(_SC_PAGE_SIZE);
+    auto eglSwapBuffersAddress = (uintptr_t) DobbySymbolResolver(OBFUSCATE("libEGL.so"), OBFUSCATE("eglSwapBuffers"));
+    uintptr_t pageStartAddress = eglSwapBuffersAddress & ~(pageSize - 1);
+    mprotect((void *) pageStartAddress, pageSize, PROT_READ | PROT_WRITE | PROT_EXEC);
+    DobbyHook((void *) eglSwapBuffersAddress, (void *) _eglSwapBuffers, (void **) &orig_eglSwapBuffers);
+
+    return 0;
+}
+
+
+    
+	
+__attribute__((constructor)) void _init()
+{
+    pthread_t t;
+    pthread_create(&t, 0, main_thread, 0);
+}
+
